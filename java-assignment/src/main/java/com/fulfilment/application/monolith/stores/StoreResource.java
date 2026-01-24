@@ -1,10 +1,15 @@
 package com.fulfilment.application.monolith.stores;
 
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.quarkus.arc.Arc;
 import io.quarkus.panache.common.Sort;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import jakarta.transaction.Status;
+import jakarta.transaction.Synchronization;
+import jakarta.transaction.TransactionManager;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
@@ -21,13 +26,17 @@ import jakarta.ws.rs.ext.Provider;
 import java.util.List;
 import org.jboss.logging.Logger;
 
-@Path("store")
+import static jakarta.transaction.Status.STATUS_COMMITTED;
+
+@Path("stores")
 @ApplicationScoped
 @Produces("application/json")
 @Consumes("application/json")
 public class StoreResource {
 
   @Inject LegacyStoreManagerGateway legacyStoreManagerGateway;
+  @Inject
+  TransactionManager transactionManager;
 
   private static final Logger LOGGER = Logger.getLogger(StoreResource.class.getName());
 
@@ -55,7 +64,27 @@ public class StoreResource {
 
     store.persist();
 
-    legacyStoreManagerGateway.createStoreOnLegacySystem(store);
+    //legacyStoreManagerGateway.createStoreOnLegacySystem(store);
+    try {
+      // Register the synchronization with the JTA transaction manager
+      transactionManager.getTransaction().registerSynchronization(new Synchronization() {
+        @Override
+        public void beforeCompletion() {
+          // No action needed before commit
+        }
+
+        @Override
+        public void afterCompletion(int status) {
+          // status 3 is STATUS_COMMITTED
+          if (status == STATUS_COMMITTED) {
+            legacyStoreManagerGateway.createStoreOnLegacySystem(store);
+          }
+        }
+      });
+    } catch (Exception e) {
+      // If we can't register the sync, we should probably fail the request
+      throw new WebApplicationException("Could not schedule legacy synchronization", 500);
+    }
 
     return Response.ok(store).status(201).build();
   }
@@ -77,8 +106,24 @@ public class StoreResource {
     entity.name = updatedStore.name;
     entity.quantityProductsInStock = updatedStore.quantityProductsInStock;
 
-    legacyStoreManagerGateway.updateStoreOnLegacySystem(updatedStore);
+    //legacyStoreManagerGateway.updateStoreOnLegacySystem(updatedStore);
+    try {
+      // Register the synchronization to fire ONLY after a successful DB commit
+      transactionManager.getTransaction().registerSynchronization(new Synchronization() {
+        @Override
+        public void beforeCompletion() {}
 
+        @Override
+        public void afterCompletion(int status) {
+          if (status == jakarta.transaction.Status.STATUS_COMMITTED) {
+            // We send the updated entity to the legacy system
+            legacyStoreManagerGateway.updateStoreOnLegacySystem(entity);
+          }
+        }
+      });
+    } catch (Exception e) {
+      throw new WebApplicationException("Could not schedule legacy synchronization", 500);
+    }
     return entity;
   }
 
@@ -104,8 +149,23 @@ public class StoreResource {
       entity.quantityProductsInStock = updatedStore.quantityProductsInStock;
     }
 
-    legacyStoreManagerGateway.updateStoreOnLegacySystem(updatedStore);
+    // legacyStoreManagerGateway.updateStoreOnLegacySystem(updatedStore);
+    try {
+      transactionManager.getTransaction().registerSynchronization(new Synchronization() {
+        @Override
+        public void beforeCompletion() {}
 
+        @Override
+        public void afterCompletion(int status) {
+          if (status == jakarta.transaction.Status.STATUS_COMMITTED) {
+            // Confirming the change to the legacy system only after DB commit
+            legacyStoreManagerGateway.updateStoreOnLegacySystem(entity);
+          }
+        }
+      });
+    } catch (Exception e) {
+      throw new WebApplicationException("Could not schedule legacy synchronization", 500);
+    }
     return entity;
   }
 
