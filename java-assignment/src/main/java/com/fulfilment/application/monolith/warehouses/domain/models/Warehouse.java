@@ -16,4 +16,7 @@ public class Warehouse {
   public LocalDateTime createdAt;
 
   public LocalDateTime archivedAt;
+
+  public Warehouse(String businessUnitCode, String location, Integer capacity, Integer stock) {
+  }
 }

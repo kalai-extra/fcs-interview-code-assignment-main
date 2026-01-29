@@ -1,0 +1,47 @@
+name: Java CI/CD
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Build and Test with Maven
+        # This runs your Unit Tests and Integration Tests (IT)
+        run: ./mvnw verify
+
+      - name: Check Test Coverage (Jacoco)
+        # Optional: Upload reports to see which lines were missed
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: target/site/jacoco/
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Container Image
+        # Quarkus makes it easy to build a Docker image without a Dockerfile
+        run: ./mvnw package -Dquarkus.container-image.build=true
+
+      # Here you would add steps to push to a Registry (ACR, ECR, DockerHub)
+      # and trigger a rollout to Kubernetes or a Cloud provider.

@@ -14,4 +14,8 @@ public interface WarehouseStore {
   void remove(Warehouse warehouse);
 
   Warehouse findByBusinessUnitCode(String buCode);
+
+  Warehouse findByLocation(String location);
+
+  long countByLocation(String locationIdentifier);
 }
